@@ -108,8 +108,8 @@
     <div id="routeList" class="route-list"></div>
 
     <div class="sidebar-footer">
-      * 站點為依據實際位置之概略標示。<br />
-      * 可直接點選上方按鈕下載為圖片分享。
+      * 路線為系統自動計算之最短行車路徑。<br />
+      * 截圖下載功能僅會截取右側地圖畫面。
     </div>
   </aside>
 
@@ -121,21 +121,19 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script>
+    // --- 1. 資料設定區 ---
     const CONFIG = {
       school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7478, 121.0883] }
     };
 
     const BUS_ROUTES = [
       {
-        id: "route-1", 
-        name: "一、湖口線", 
-        color: "#2563eb", // 藍色
-        note: "06:10 發車",
+        id: "route-1", name: "一、湖口線", color: "#2563eb", note: "06:10 發車",
         stops: [
           { name: "湖口火車站", time: "06:10", coords: [24.9016, 121.0443] },
           { name: "成功路", time: "06:12", coords: [24.9065, 121.0450] },
           { name: "新豐火車站", time: "06:20", coords: [24.8698, 120.9828] },
-          { name: "竹北口", time: "06:30", coords: [24.8387, 121.0053] },
+          { name: "竹北口", time: "06:30", coords: [24.8436, 121.0102] },
           { name: "中正東路85度C", time: "06:35", coords: [24.8360, 121.0130] },
           { name: "水瀧路口", time: "06:42", coords: [24.8385, 121.0195] },
           { name: "犁頭山", time: "06:45", coords: [24.8198, 121.0495] },
@@ -145,16 +143,13 @@
         ]
       },
       {
-        id: "route-2", 
-        name: "二、新竹六家線", 
-        color: "#dc2626", // 紅色
-        note: "06:32 發車",
+        id: "route-2", name: "二、新竹六家線", color: "#dc2626", note: "06:32 發車",
         stops: [
           { name: "新竹高工", time: "06:32", coords: [24.8091, 120.9827] },
           { name: "中華路經國路口", time: "06:35", coords: [24.8145, 120.9872] },
           { name: "下斗崙", time: "06:40", coords: [24.8190, 121.0020] },
           { name: "福興公園", time: "06:45", coords: [24.8215, 121.0100] },
-          { name: "光明六路東(自強南麥當勞)", time: "06:52", coords: [24.8166, 121.0267] },
+          { name: "光明六路東(麥當勞)", time: "06:52", coords: [24.8166, 121.0267] },
           { name: "東海", time: "07:00", coords: [24.7955, 121.0505] },
           { name: "上山", time: "07:05", coords: [24.7865, 121.0750] },
           { name: "芎林", time: "07:10", coords: [24.7750, 121.0805] },
@@ -162,10 +157,7 @@
         ]
       },
       {
-        id: "route-3", 
-        name: "三、新竹東區線", 
-        color: "#059669", // 綠色
-        note: "06:30 發車",
+        id: "route-3", name: "三、新竹東區線", color: "#059669", note: "06:30 發車",
         stops: [
           { name: "新竹火車站", time: "06:30", coords: [24.8016, 120.9716] },
           { name: "光復高中", time: "06:40", coords: [24.7985, 120.9950] },
@@ -179,11 +171,12 @@
       }
     ];
 
+    // --- 2. 初始化地圖與圖層 ---
     const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
     
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
-      attribution: 'Tiles &copy; Esri',
+      attribution: 'Tiles © Esri',
       crossOrigin: true
     }).addTo(map);
 
@@ -201,20 +194,43 @@
     const btnDownload = document.getElementById("btnDownload");
     let pickerMode = false;
 
+    // --- 3. 繪製站點與呼叫自動導航路線 ---
     BUS_ROUTES.forEach((route) => {
       const layerGroup = L.layerGroup().addTo(map);
-      const latlngs = route.stops.map((s) => s.coords);
+      
+      // 計算該路線的邊界範圍，用於縮放
+      const bounds = L.latLngBounds(route.stops.map(s => s.coords));
+      routeLayers[route.id] = { layerGroup, bounds };
 
-      L.polyline(latlngs, { color: route.color, weight: 5, opacity: 0.85 }).addTo(layerGroup);
-
+      // 畫站點圓圈
       route.stops.forEach((stop, idx) => {
         L.circleMarker(stop.coords, {
           radius: 7, fillColor: route.color, color: "#ffffff", weight: 2.5, opacity: 1, fillOpacity: 1
         }).addTo(layerGroup).bindTooltip(`${idx + 1}. ${stop.name}`, { permanent: true, direction: 'right', className: 'map-label' });
       });
 
-      routeLayers[route.id] = { layerGroup, polyline: L.polyline(latlngs) };
+      // 【核心升級】利用 OSRM API 自動畫出真實馬路軌跡
+      // OSRM 需要的格式是 "經度,緯度;經度,緯度"
+      const coordinatesString = route.stops.map(s => `${s.coords[1]},${s.coords[0]}`).join(';');
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordinatesString}?overview=full&geometries=geojson`;
 
+      fetch(osrmUrl)
+        .then(response => response.json())
+        .then(data => {
+          if (data.routes && data.routes.length > 0) {
+            // OSRM 回傳的是 [經度, 緯度]，Leaflet 畫線需要 [緯度, 經度]
+            const realPath = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+            L.polyline(realPath, { color: route.color, weight: 5, opacity: 0.85 }).addTo(layerGroup);
+          } else {
+            // 如果某條路抓不到，自動降級畫直線
+            L.polyline(route.stops.map(s => s.coords), { color: route.color, weight: 5, opacity: 0.85 }).addTo(layerGroup);
+          }
+        })
+        .catch(() => {
+          L.polyline(route.stops.map(s => s.coords), { color: route.color, weight: 5, opacity: 0.85 }).addTo(layerGroup);
+        });
+
+      // 建立側邊欄按鈕
       const card = document.createElement("div");
       card.className = "route-card";
       card.dataset.id = route.id;
@@ -238,14 +254,15 @@
       routeListEl.appendChild(card);
     });
 
+    // --- 4. 介面互動控制 ---
     function selectRoute(routeId) {
       btnShowAll.classList.remove("active");
       document.querySelectorAll(".route-card").forEach((card) => card.classList.toggle("selected", card.dataset.id === routeId));
       BUS_ROUTES.forEach((route) => {
-        const { layerGroup, polyline } = routeLayers[route.id];
+        const { layerGroup, bounds } = routeLayers[route.id];
         if (route.id === routeId) {
           if (!map.hasLayer(layerGroup)) map.addLayer(layerGroup);
-          map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+          map.fitBounds(bounds, { padding: [50, 50] });
         } else {
           if (map.hasLayer(layerGroup)) map.removeLayer(layerGroup);
         }
@@ -257,13 +274,14 @@
       document.querySelectorAll(".route-card").forEach((c) => c.classList.remove("selected"));
       const allBounds = L.latLngBounds([]);
       BUS_ROUTES.forEach((route) => {
-        const { layerGroup, polyline } = routeLayers[route.id];
+        const { layerGroup, bounds } = routeLayers[route.id];
         if (!map.hasLayer(layerGroup)) map.addLayer(layerGroup);
-        allBounds.extend(polyline.getBounds());
+        allBounds.extend(bounds);
       });
       if (allBounds.isValid()) map.fitBounds(allBounds, { padding: [40, 40] });
     });
     
+    // 取座標功能
     btnPicker.addEventListener("click", () => {
       pickerMode = !pickerMode;
       btnPicker.classList.toggle("active", pickerMode);
@@ -287,7 +305,7 @@
         .openOn(map);
     });
 
-    // 只截取右側地圖區塊（排除左側側邊欄與左上角縮放按鈕）
+    // 只截取右側地圖
     btnDownload.addEventListener("click", () => {
       const originalText = btnDownload.innerText;
       btnDownload.innerText = "⏳ 處理中...";
@@ -298,7 +316,6 @@
           useCORS: true,
           allowTaint: false,
           ignoreElements: (element) => {
-            // 順便把地圖左上角的 +/- 縮放控制鈕也隱藏，讓圖片更乾淨
             return element.classList && element.classList.contains("leaflet-control-zoom");
           }
         }).then((canvas) => {
