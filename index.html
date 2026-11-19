@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>自強高工 - 校車路線規劃地圖</title>
-  <!-- Leaflet 地圖樣式 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,7 +16,6 @@
       color: #1e293b;
     }
 
-    /* 左側邊欄 */
     aside {
       width: 340px;
       background: #ffffff;
@@ -36,7 +34,6 @@
     .sidebar-header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; }
     .sidebar-header p { font-size: 0.9rem; opacity: 0.9; margin-top: 4px; }
 
-    /* 工具列 */
     .toolbar {
       padding: 12px 16px;
       border-bottom: 1px solid #e2e8f0;
@@ -61,7 +58,6 @@
     .btn-download { background: #10b981; color: #ffffff; border-color: #10b981; }
     .btn-download:hover { background: #059669; }
 
-    /* 路線清單區 */
     .route-list { flex: 1; overflow-y: auto; padding: 14px 16px; }
     .route-card {
       border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px;
@@ -77,7 +73,6 @@
     .color-dot { width: 12px; height: 12px; border-radius: 50%; }
     .route-meta { font-size: 0.78rem; color: #64748b; font-weight: 400; }
     
-    /* 站點明細 */
     .stop-list { border-top: 1px solid #f1f5f9; padding: 8px 14px 12px; background: #fafafa; display: none; }
     .route-card.selected .stop-list { display: block; }
     .stop-item {
@@ -90,7 +85,6 @@
     }
     .stop-time { margin-left: auto; font-size: 0.78rem; color: #64748b; }
 
-    /* 右側地圖 */
     main { flex: 1; position: relative; height: 100%; min-width: 0; }
     #map { width: 100%; height: 100%; background: #e2e8f0; }
 
@@ -107,7 +101,7 @@
 
     <div class="toolbar">
       <button id="btnShowAll" class="btn active" type="button">全部路線</button>
-      <!-- 加入了下載為圖片的按鈕 -->
+      <button id="btnPicker" class="btn" type="button" title="開啟後點擊地圖可複製經緯度">📍 取座標</button>
       <button id="btnDownload" class="btn btn-download" type="button">📥 存成圖片</button>
     </div>
 
@@ -123,12 +117,10 @@
     <div id="map"></div>
   </main>
 
-  <!-- 引入 Leaflet 與 html2canvas (用於截圖) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script>
-    // --- 1. 資料設定區 ---
     const CONFIG = {
       school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7478, 121.0883] }
     };
@@ -152,14 +144,13 @@
       }
     ];
 
-    // --- 2. 地圖初始化 ---
     const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
     
-    // 必須加上 crossOrigin 屬性以允許截圖
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; OpenStreetMap',
+    // CHANGED: Use Esri World Street Map (extremely stable, no API key, permissive CORS)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
-      crossOrigin: true 
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+      crossOrigin: true
     }).addTo(map);
 
     const schoolIcon = L.divIcon({
@@ -172,9 +163,10 @@
     const routeLayers = {};
     const routeListEl = document.getElementById("routeList");
     const btnShowAll = document.getElementById("btnShowAll");
+    const btnPicker = document.getElementById("btnPicker");
     const btnDownload = document.getElementById("btnDownload");
+    let pickerMode = false;
 
-    // --- 3. 渲染路線 ---
     BUS_ROUTES.forEach((route) => {
       const layerGroup = L.layerGroup().addTo(map);
       const latlngs = route.stops.map((s) => s.coords);
@@ -237,20 +229,40 @@
       });
       if (allBounds.isValid()) map.fitBounds(allBounds, { padding: [40, 40] });
     });
+    
+    btnPicker.addEventListener("click", () => {
+      pickerMode = !pickerMode;
+      btnPicker.classList.toggle("active", pickerMode);
+      map.getContainer().style.cursor = pickerMode ? "crosshair" : "";
+    });
 
-    // --- 4. Canvas 截圖功能 ---
+    map.on("click", (e) => {
+      if (!pickerMode) return;
+      const lat = e.latlng.lat.toFixed(4);
+      const lng = e.latlng.lng.toFixed(4);
+      const coordText = `[${lat}, ${lng}]`;
+      L.popup()
+        .setLatLng(e.latlng)
+        .setContent(`
+          <div style="text-align:center;">
+            <div style="font-size:12px;color:#64748b;">點擊複製此座標貼回程式碼：</div>
+            <code style="display:block;margin:6px 0;padding:4px 8px;background:#f1f5f9;border-radius:4px;font-weight:700;">${coordText}</code>
+            <button onclick="navigator.clipboard.writeText('${coordText}');this.textContent='已複製！'" style="padding:4px 10px;border:none;border-radius:4px;background:#2563eb;color:#fff;cursor:pointer;font-size:12px;">複製座標</button>
+          </div>
+        `)
+        .openOn(map);
+    });
+
     btnDownload.addEventListener("click", () => {
       const originalText = btnDownload.innerText;
       btnDownload.innerText = "⏳ 處理中...";
       
-      // 給地圖 0.5 秒的時間確保圖磚已經載入完畢
       setTimeout(() => {
         html2canvas(document.body, {
-          useCORS: true, // 允許跨域抓取地圖圖磚
+          useCORS: true,
           allowTaint: false,
           ignoreElements: (element) => {
-            // 截圖時不印出這兩個按鈕
-            return element.id === "btnDownload" || element.id === "btnShowAll";
+            return element.id === "btnDownload" || element.id === "btnShowAll" || element.id === "btnPicker";
           }
         }).then((canvas) => {
           const link = document.createElement("a");
