@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>自強高工 - 校車路線規劃地圖</title>
-  <!-- Leaflet 地圖樣式 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,7 +16,6 @@
       color: #1e293b;
     }
 
-    /* 左側邊欄 */
     aside {
       width: 340px;
       background: #ffffff;
@@ -36,7 +34,6 @@
     .sidebar-header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; }
     .sidebar-header p { font-size: 0.9rem; opacity: 0.9; margin-top: 4px; }
 
-    /* 工具列 */
     .toolbar {
       padding: 12px 16px;
       border-bottom: 1px solid #e2e8f0;
@@ -61,7 +58,6 @@
     .btn-download { background: #10b981; color: #ffffff; border-color: #10b981; }
     .btn-download:hover { background: #059669; }
 
-    /* 路線清單區 */
     .route-list { flex: 1; overflow-y: auto; padding: 14px 16px; }
     .route-card {
       border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px;
@@ -77,7 +73,6 @@
     .color-dot { width: 12px; height: 12px; border-radius: 50%; }
     .route-meta { font-size: 0.78rem; color: #64748b; font-weight: 400; }
     
-    /* 站點明細 */
     .stop-list { border-top: 1px solid #f1f5f9; padding: 8px 14px 12px; background: #fafafa; display: none; }
     .route-card.selected .stop-list { display: block; }
     .stop-item {
@@ -90,7 +85,6 @@
     }
     .stop-time { margin-left: auto; font-size: 0.78rem; color: #64748b; }
 
-    /* 右側地圖 */
     main { flex: 1; position: relative; height: 100%; min-width: 0; }
     #map { width: 100%; height: 100%; background: #e2e8f0; }
 
@@ -119,7 +113,7 @@
     </div>
   </aside>
 
-  <main>
+  <main id="mapContainer">
     <div id="map"></div>
   </main>
 
@@ -133,33 +127,65 @@
 
     const BUS_ROUTES = [
       {
-        id: "route-1", name: "A線｜竹北高鐵線", color: "#2563eb", note: "06:40 發車",
+        id: "route-1", 
+        name: "一、湖口線", 
+        color: "#2563eb", // 藍色
+        note: "06:10 發車",
         stops: [
-          { name: "高鐵新竹站", time: "06:40", coords: [24.8084, 121.0403] },
-          { name: "喜來登飯店", time: "06:48", coords: [24.8211, 121.0235] },
-          { name: "自強高工",   time: "07:25", coords: [24.7478, 121.0883] }
+          { name: "湖口火車站", time: "06:10", coords: [24.9016, 121.0443] },
+          { name: "成功路", time: "06:12", coords: [24.9065, 121.0450] },
+          { name: "新豐火車站", time: "06:20", coords: [24.8698, 120.9828] },
+          { name: "竹北口", time: "06:30", coords: [24.8436, 121.0102] },
+          { name: "中正東路85度C", time: "06:35", coords: [24.8360, 121.0130] },
+          { name: "水瀧路口", time: "06:42", coords: [24.8385, 121.0195] },
+          { name: "犁頭山", time: "06:45", coords: [24.8198, 121.0495] },
+          { name: "新埔鎮公所", time: "07:00", coords: [24.8268, 121.0730] },
+          { name: "芎林衛生所", time: "07:15", coords: [24.7741, 121.0772] },
+          { name: "自強高工", time: "07:30", coords: [24.7478, 121.0883] }
         ]
       },
       {
-        id: "route-2", name: "B線｜新竹市區線", color: "#dc2626", note: "06:35 發車",
+        id: "route-2", 
+        name: "二、新竹六家線", 
+        color: "#dc2626", // 紅色
+        note: "06:32 發車",
         stops: [
-          { name: "新竹火車站", time: "06:35", coords: [24.8016, 120.9716] },
-          { name: "清大光復路", time: "06:48", coords: [24.7963, 120.9968] },
-          { name: "自強高工",   time: "07:25", coords: [24.7478, 121.0883] }
+          { name: "新竹高工", time: "06:32", coords: [24.8091, 120.9827] },
+          { name: "中華路經國路口", time: "06:35", coords: [24.8145, 120.9872] },
+          { name: "下斗崙", time: "06:40", coords: [24.8190, 121.0020] },
+          { name: "福興公園", time: "06:45", coords: [24.8215, 121.0100] },
+          { name: "光明六路東(自強南麥當勞)", time: "06:52", coords: [24.8166, 121.0267] },
+          { name: "東海", time: "07:00", coords: [24.7955, 121.0505] },
+          { name: "上山", time: "07:05", coords: [24.7865, 121.0750] },
+          { name: "芎林", time: "07:10", coords: [24.7750, 121.0805] },
+          { name: "自強高工", time: "07:20", coords: [24.7478, 121.0883] }
+        ]
+      },
+      {
+        id: "route-3", 
+        name: "三、新竹東區線", 
+        color: "#059669", // 綠色
+        note: "06:30 發車",
+        stops: [
+          { name: "新竹火車站", time: "06:30", coords: [24.8016, 120.9716] },
+          { name: "光復高中", time: "06:40", coords: [24.7985, 120.9950] },
+          { name: "好事多", time: "06:50", coords: [24.7915, 121.0145] },
+          { name: "關埔國小", time: "06:55", coords: [24.7895, 121.0165] },
+          { name: "光武國中", time: "07:00", coords: [24.7885, 121.0152] },
+          { name: "關東橋", time: "07:03", coords: [24.7834, 121.0241] },
+          { name: "二重埔7-11", time: "07:10", coords: [24.7758, 121.0535] },
+          { name: "自強高工", time: "07:20", coords: [24.7478, 121.0883] }
         ]
       }
     ];
 
     const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
     
-    // CHANGED: Use a reliable, truly free and open tile server without API key restrictions.
-    // OpenStreetMap default tiles.
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
-      attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution: 'Tiles &copy; Esri',
       crossOrigin: true
     }).addTo(map);
-
 
     const schoolIcon = L.divIcon({
       className: "school-pin",
@@ -261,16 +287,19 @@
         .openOn(map);
     });
 
+    // 只截取右側地圖區塊（排除左側側邊欄與左上角縮放按鈕）
     btnDownload.addEventListener("click", () => {
       const originalText = btnDownload.innerText;
       btnDownload.innerText = "⏳ 處理中...";
       
       setTimeout(() => {
-        html2canvas(document.body, {
+        const mapEl = document.getElementById("mapContainer");
+        html2canvas(mapEl, {
           useCORS: true,
           allowTaint: false,
           ignoreElements: (element) => {
-            return element.id === "btnDownload" || element.id === "btnShowAll" || element.id === "btnPicker";
+            // 順便把地圖左上角的 +/- 縮放控制鈕也隱藏，讓圖片更乾淨
+            return element.classList && element.classList.contains("leaflet-control-zoom");
           }
         }).then((canvas) => {
           const link = document.createElement("a");
@@ -283,7 +312,7 @@
           alert("圖片產生失敗，請稍後再試。");
           btnDownload.innerText = originalText;
         });
-      }, 500);
+      }, 300);
     });
 
     btnShowAll.click();
