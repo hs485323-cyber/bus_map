@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>自強高工 - 校車路線規劃地圖</title>
+  <!-- Leaflet 地圖樣式 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+
+    /* 左側邊欄 */
+    aside {
+      width: 340px;
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+      box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+    }
+
+    .sidebar-header {
+      padding: 20px 20px 16px;
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+      color: #ffffff;
+    }
+    .sidebar-header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; }
+    .sidebar-header p { font-size: 0.9rem; opacity: 0.9; margin-top: 4px; }
+
+    /* 工具列 */
+    .toolbar {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: #f8fafc;
+    }
+    .btn {
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #334155;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #f1f5f9; }
+    .btn.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+    .btn-download { background: #10b981; color: #ffffff; border-color: #10b981; }
+    .btn-download:hover { background: #059669; }
+
+    /* 路線清單區 */
+    .route-list { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .route-card {
+      border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px;
+      background: #ffffff; overflow: hidden;
+    }
+    .route-card.selected { border-color: #2563eb; box-shadow: 0 2px 10px rgba(37, 99, 235, 0.12); }
+    .route-title-btn {
+      width: 100%; padding: 12px 14px; background: none; border: none;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; font-size: 0.98rem; font-weight: 700; color: #0f172a;
+    }
+    .route-badge { display: inline-flex; align-items: center; gap: 8px; }
+    .color-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .route-meta { font-size: 0.78rem; color: #64748b; font-weight: 400; }
+    
+    /* 站點明細 */
+    .stop-list { border-top: 1px solid #f1f5f9; padding: 8px 14px 12px; background: #fafafa; display: none; }
+    .route-card.selected .stop-list { display: block; }
+    .stop-item {
+      display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+      font-size: 0.88rem; color: #334155;
+    }
+    .stop-num {
+      width: 20px; height: 20px; border-radius: 50%; font-size: 0.75rem;
+      font-weight: 700; color: #fff; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .stop-time { margin-left: auto; font-size: 0.78rem; color: #64748b; }
+
+    /* 右側地圖 */
+    main { flex: 1; position: relative; height: 100%; min-width: 0; }
+    #map { width: 100%; height: 100%; background: #e2e8f0; }
+
+    .sidebar-footer { padding: 12px 16px; font-size: 0.78rem; color: #64748b; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h1>自強高工</h1>
+      <p>校車路線規劃地圖</p>
+    </div>
+
+    <div class="toolbar">
+      <button id="btnShowAll" class="btn active" type="button">全部路線</button>
+      <!-- 加入了下載為圖片的按鈕 -->
+      <button id="btnDownload" class="btn btn-download" type="button">📥 存成圖片</button>
+    </div>
+
+    <div id="routeList" class="route-list"></div>
+
+    <div class="sidebar-footer">
+      * 站點為依據實際位置之概略標示。<br />
+      * 可直接點選上方按鈕下載為圖片分享。
+    </div>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+  </main>
+
+  <!-- 引入 Leaflet 與 html2canvas (用於截圖) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <script>
+    // --- 1. 資料設定區 ---
+    const CONFIG = {
+      school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7478, 121.0883] }
+    };
+
+    const BUS_ROUTES = [
+      {
+        id: "route-1", name: "A線｜竹北高鐵線", color: "#2563eb", note: "06:40 發車",
+        stops: [
+          { name: "高鐵新竹站", time: "06:40", coords: [24.8084, 121.0403] },
+          { name: "喜來登飯店", time: "06:48", coords: [24.8211, 121.0235] },
+          { name: "自強高工",   time: "07:25", coords: [24.7478, 121.0883] }
+        ]
+      },
+      {
+        id: "route-2", name: "B線｜新竹市區線", color: "#dc2626", note: "06:35 發車",
+        stops: [
+          { name: "新竹火車站", time: "06:35", coords: [24.8016, 120.9716] },
+          { name: "清大光復路", time: "06:48", coords: [24.7963, 120.9968] },
+          { name: "自強高工",   time: "07:25", coords: [24.7478, 121.0883] }
+        ]
+      }
+    ];
+
+    // --- 2. 地圖初始化 ---
+    const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
+    
+    // 必須加上 crossOrigin 屬性以允許截圖
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; OpenStreetMap',
+      maxZoom: 19,
+      crossOrigin: true 
+    }).addTo(map);
+
+    const schoolIcon = L.divIcon({
+      className: "school-pin",
+      html: `<div style="background:#1e3a8a;color:#fff;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);transform:translate(-35%,-50%);">🏫 ${CONFIG.school.name}</div>`,
+      iconSize: [0, 0]
+    });
+    L.marker(CONFIG.school.coords, { icon: schoolIcon, zIndexOffset: 1000 }).addTo(map);
+
+    const routeLayers = {};
+    const routeListEl = document.getElementById("routeList");
+    const btnShowAll = document.getElementById("btnShowAll");
+    const btnDownload = document.getElementById("btnDownload");
+
+    // --- 3. 渲染路線 ---
+    BUS_ROUTES.forEach((route) => {
+      const layerGroup = L.layerGroup().addTo(map);
+      const latlngs = route.stops.map((s) => s.coords);
+
+      L.polyline(latlngs, { color: route.color, weight: 5, opacity: 0.85 }).addTo(layerGroup);
+
+      route.stops.forEach((stop, idx) => {
+        L.circleMarker(stop.coords, {
+          radius: 7, fillColor: route.color, color: "#ffffff", weight: 2.5, opacity: 1, fillOpacity: 1
+        }).addTo(layerGroup).bindTooltip(`${idx + 1}. ${stop.name}`, { permanent: true, direction: 'right', className: 'map-label' });
+      });
+
+      routeLayers[route.id] = { layerGroup, polyline: L.polyline(latlngs) };
+
+      const card = document.createElement("div");
+      card.className = "route-card";
+      card.dataset.id = route.id;
+      
+      card.innerHTML = `
+        <button class="route-title-btn" type="button">
+          <span class="route-badge"><span class="color-dot" style="background:${route.color}"></span><span>${route.name}</span></span>
+          <span class="route-meta">${route.note}</span>
+        </button>
+        <div class="stop-list">
+          ${route.stops.map((stop, idx) => `
+            <div class="stop-item">
+              <span class="stop-num" style="background:${route.color}">${idx + 1}</span>
+              <span>${stop.name}</span>
+              <span class="stop-time">${stop.time}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      card.querySelector('.route-title-btn').addEventListener("click", () => selectRoute(route.id));
+      routeListEl.appendChild(card);
+    });
+
+    function selectRoute(routeId) {
+      btnShowAll.classList.remove("active");
+      document.querySelectorAll(".route-card").forEach((card) => card.classList.toggle("selected", card.dataset.id === routeId));
+      BUS_ROUTES.forEach((route) => {
+        const { layerGroup, polyline } = routeLayers[route.id];
+        if (route.id === routeId) {
+          if (!map.hasLayer(layerGroup)) map.addLayer(layerGroup);
+          map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+        } else {
+          if (map.hasLayer(layerGroup)) map.removeLayer(layerGroup);
+        }
+      });
+    }
+
+    btnShowAll.addEventListener("click", () => {
+      btnShowAll.classList.add("active");
+      document.querySelectorAll(".route-card").forEach((c) => c.classList.remove("selected"));
+      const allBounds = L.latLngBounds([]);
+      BUS_ROUTES.forEach((route) => {
+        const { layerGroup, polyline } = routeLayers[route.id];
+        if (!map.hasLayer(layerGroup)) map.addLayer(layerGroup);
+        allBounds.extend(polyline.getBounds());
+      });
+      if (allBounds.isValid()) map.fitBounds(allBounds, { padding: [40, 40] });
+    });
+
+    // --- 4. Canvas 截圖功能 ---
+    btnDownload.addEventListener("click", () => {
+      const originalText = btnDownload.innerText;
+      btnDownload.innerText = "⏳ 處理中...";
+      
+      // 給地圖 0.5 秒的時間確保圖磚已經載入完畢
+      setTimeout(() => {
+        html2canvas(document.body, {
+          useCORS: true, // 允許跨域抓取地圖圖磚
+          allowTaint: false,
+          ignoreElements: (element) => {
+            // 截圖時不印出這兩個按鈕
+            return element.id === "btnDownload" || element.id === "btnShowAll";
+          }
+        }).then((canvas) => {
+          const link = document.createElement("a");
+          link.download = "校車路線規劃地圖.png";
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+          btnDownload.innerText = originalText;
+        }).catch(err => {
+          console.error(err);
+          alert("圖片產生失敗，請稍後再試。");
+          btnDownload.innerText = originalText;
+        });
+      }, 500);
+    });
+
+    btnShowAll.click();
+  </script>
+</body>
+</html>
