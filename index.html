@@ -161,8 +161,7 @@
     <div id="routeList" class="route-list"></div>
 
     <div class="sidebar-footer">
-      * 路線為系統自動計算之最短行車路徑。<br />
-      * 點擊高清截圖，將擷取 2K 畫質廣角地圖。
+      * 點擊高清截圖，將擷取地圖。
     </div>
   </aside>
 
@@ -370,7 +369,7 @@
           }
         }).then((canvas) => {
           const link = document.createElement("a");
-          link.download = "校車路線規劃地圖_高清廣角.png";
+          link.download = "校車路線規劃地圖.png";
           link.href = canvas.toDataURL("image/png");
           link.click();
           
