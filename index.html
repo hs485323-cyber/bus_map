@@ -29,12 +29,10 @@
       flex-shrink: 0;
     }
 
-    /* 側邊欄收起狀態 */
     body.sidebar-closed aside {
       margin-left: -340px;
     }
 
-    /* 側邊欄開關按鈕 */
     .toggle-sidebar-btn {
       position: absolute;
       top: 50%;
@@ -126,7 +124,6 @@
     .sidebar-footer { padding: 12px 16px; font-size: 0.78rem; color: #64748b; background: #f8fafc; border-top: 1px solid #e2e8f0; }
     
     .map-label {
-      background: rgba(255, 255, 255, 0.95);
       border: 1px solid #94a3b8;
       border-radius: 4px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.15);
@@ -134,19 +131,16 @@
       font-size: 13px; 
       padding: 3px 6px;
       white-space: nowrap;
-      color: #1e293b;
+      color: #0f172a;
     }
-    .leaflet-tooltip-left::before { border-left-color: rgba(255, 255, 255, 0.95); }
-    .leaflet-tooltip-right::before { border-right-color: rgba(255, 255, 255, 0.95); }
 
-    /* 高畫質匯出模式專用樣式 */
     .export-mode {
       position: fixed !important;
       top: 0;
       left: 0;
-      width: 2560px !important;  /* 2K 超大解析度 */
+      width: 2560px !important;  
       height: 1440px !important;
-      z-index: 9999; /* 產生圖片時覆蓋整個畫面 */
+      z-index: 9999; 
     }
   </style>
 </head>
@@ -172,7 +166,6 @@
     </div>
   </aside>
 
-  <!-- 側邊欄開關 -->
   <button id="btnToggleSidebar" class="toggle-sidebar-btn" title="收起/展開側邊欄"></button>
 
   <main id="mapContainer">
@@ -182,18 +175,35 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   
-  <!-- 獨立的路線資料檔案 -->
+  <!-- 載入路線資料 -->
   <script src="routes.js"></script>
 
   <script>
     const CONFIG = {
-      school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7464, 121.0851] }
+      school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7478, 121.0883] }
     };
 
-    // BUS_ROUTES 已經透過上面的 <script src="routes.js"> 載入進來了！
+    // 自動依據 routes.js 內的 bgColor 與 color 產生標籤樣式
+    const styleEl = document.createElement('style');
+    let dynamicCss = '';
+    BUS_ROUTES.forEach(route => {
+        if (route.bgColor) {
+            dynamicCss += `
+              .label-${route.id} {
+                  background-color: ${route.bgColor} !important;
+                  border-color: ${route.color} !important;
+              }
+              .label-${route.id}.leaflet-tooltip-left::before { border-left-color: ${route.bgColor} !important; }
+              .label-${route.id}.leaflet-tooltip-right::before { border-right-color: ${route.bgColor} !important; }
+              .label-${route.id}.leaflet-tooltip-top::before { border-top-color: ${route.bgColor} !important; }
+              .label-${route.id}.leaflet-tooltip-bottom::before { border-bottom-color: ${route.bgColor} !important; }
+            `;
+        }
+    });
+    styleEl.innerHTML = dynamicCss;
+    document.head.appendChild(styleEl);
 
     let currentRouteId = null;
-
     const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
     
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -217,10 +227,8 @@
     const btnToggleSidebar = document.getElementById("btnToggleSidebar");
     let pickerMode = false;
 
-    // 側邊欄收合邏輯
     btnToggleSidebar.addEventListener("click", () => {
       document.body.classList.toggle("sidebar-closed");
-      // 等待動畫結束後，重新計算地圖大小避免破圖
       setTimeout(() => map.invalidateSize(), 300);
     });
 
@@ -237,7 +245,7 @@
         }).addTo(layerGroup).bindTooltip(stop.name, { 
             permanent: true, 
             direction: stop.direction || 'right',
-            className: 'map-label',
+            className: `map-label label-${route.id}`,
             offset: [0, 0]
         });
       });
@@ -336,18 +344,15 @@
         .openOn(map);
     });
 
-    // 高清廣角截圖邏輯
     btnDownload.addEventListener("click", () => {
       const originalText = btnDownload.innerText;
       btnDownload.innerText = "⏳ 處理中(勿操作)...";
       
       const mapEl = document.getElementById("mapContainer");
       
-      // 1. 套用 2K 解析度大畫布樣式
       mapEl.classList.add("export-mode");
-      map.invalidateSize(); // 告訴地圖容器變大了，請載入更多周圍的圖磚
+      map.invalidateSize(); 
       
-      // 2. 重新對焦範圍，並增加留白 padding 讓周圍環境入鏡
       let targetBounds = L.latLngBounds([]);
       if (currentRouteId) {
           targetBounds = routeLayers[currentRouteId].bounds;
@@ -356,7 +361,6 @@
       }
       map.fitBounds(targetBounds, { padding: [150, 150] });
 
-      // 3. 等待 1.5 秒讓邊緣的新圖磚完全載入
       setTimeout(() => {
         html2canvas(mapEl, {
           useCORS: true,
@@ -365,13 +369,11 @@
             return element.classList && element.classList.contains("leaflet-control-zoom");
           }
         }).then((canvas) => {
-          // 下載圖片
           const link = document.createElement("a");
           link.download = "校車路線規劃地圖_高清廣角.png";
           link.href = canvas.toDataURL("image/png");
           link.click();
           
-          // 4. 復原原本的畫面狀態
           mapEl.classList.remove("export-mode");
           map.invalidateSize();
           map.fitBounds(targetBounds, { padding: [40, 40] });
