@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
@@ -13,6 +14,7 @@
       overflow: hidden;
       background: #f8fafc;
       color: #1e293b;
+      position: relative;
     }
 
     aside {
@@ -23,7 +25,40 @@
       flex-direction: column;
       z-index: 1000;
       box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+      transition: margin-left 0.3s ease;
+      flex-shrink: 0;
     }
+
+    /* 側邊欄收起狀態 */
+    body.sidebar-closed aside {
+      margin-left: -340px;
+    }
+
+    /* 側邊欄開關按鈕 */
+    .toggle-sidebar-btn {
+      position: absolute;
+      top: 50%;
+      left: 340px;
+      transform: translateY(-50%);
+      z-index: 1001;
+      background: #1e3a8a;
+      color: white;
+      border: none;
+      width: 24px;
+      height: 60px;
+      border-radius: 0 8px 8px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 2px 0 6px rgba(0,0,0,0.2);
+      transition: left 0.3s ease, background 0.2s;
+      font-size: 12px;
+    }
+    .toggle-sidebar-btn:hover { background: #2563eb; }
+    body.sidebar-closed .toggle-sidebar-btn { left: 0; }
+    body.sidebar-closed .toggle-sidebar-btn::after { content: "▶"; }
+    .toggle-sidebar-btn::after { content: "◀"; }
 
     .sidebar-header {
       padding: 20px 20px 16px;
@@ -81,6 +116,7 @@
     .stop-num {
       width: 20px; height: 20px; border-radius: 50%; font-size: 0.75rem;
       font-weight: 700; color: #fff; display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
     .stop-time { margin-left: auto; font-size: 0.78rem; color: #64748b; }
 
@@ -89,21 +125,29 @@
 
     .sidebar-footer { padding: 12px 16px; font-size: 0.78rem; color: #64748b; background: #f8fafc; border-top: 1px solid #e2e8f0; }
     
-    /* 修正站名重疊問題的樣式 */
     .map-label {
       background: rgba(255, 255, 255, 0.95);
       border: 1px solid #94a3b8;
       border-radius: 4px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.15);
       font-weight: bold;
-      font-size: 13px; /* 字體稍微調小 */
+      font-size: 13px; 
       padding: 3px 6px;
       white-space: nowrap;
       color: #1e293b;
     }
     .leaflet-tooltip-left::before { border-left-color: rgba(255, 255, 255, 0.95); }
     .leaflet-tooltip-right::before { border-right-color: rgba(255, 255, 255, 0.95); }
-    
+
+    /* 高畫質匯出模式專用樣式 */
+    .export-mode {
+      position: fixed !important;
+      top: 0;
+      left: 0;
+      width: 2560px !important;  /* 2K 超大解析度 */
+      height: 1440px !important;
+      z-index: 9999; /* 產生圖片時覆蓋整個畫面 */
+    }
   </style>
 </head>
 <body>
@@ -117,16 +161,19 @@
     <div class="toolbar">
       <button id="btnShowAll" class="btn active" type="button">全部路線</button>
       <button id="btnPicker" class="btn" type="button" title="開啟後點擊地圖可複製經緯度">📍 取座標</button>
-      <button id="btnDownload" class="btn btn-download" type="button">📥 存成圖片</button>
+      <button id="btnDownload" class="btn btn-download" type="button">📥 高清截圖</button>
     </div>
 
     <div id="routeList" class="route-list"></div>
 
     <div class="sidebar-footer">
       * 路線為系統自動計算之最短行車路徑。<br />
-      * 截圖下載功能僅會截取右側地圖畫面。
+      * 點擊高清截圖，將擷取 2K 畫質廣角地圖。
     </div>
   </aside>
+
+  <!-- 側邊欄開關 -->
+  <button id="btnToggleSidebar" class="toggle-sidebar-btn" title="收起/展開側邊欄"></button>
 
   <main id="mapContainer">
     <div id="map"></div>
@@ -134,67 +181,21 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- 獨立的路線資料檔案 -->
+  <script src="routes.js"></script>
 
   <script>
     const CONFIG = {
-      school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7478, 121.0883] }
+      school: { name: "自強高工", address: "新竹縣竹東鎮自強路169號", coords: [24.7464, 121.0851] }
     };
 
-    // 方案一：站名合併標示
-    const BUS_ROUTES = [
-      {
-        id: "route-1", 
-        name: "一、湖口線", 
-        color: "#2563eb", 
-        note: "06:10 發車",
-        stops: [
-          { name: "1. 湖口火車站<br>(前屈臣氏/火車站)", time: "06:10", coords: [24.9023, 121.0442], direction: 'top' },
-          { name: "2. 成功路全家", time: "06:12", coords: [24.904570, 121.042995], direction: 'right' },
-          { name: "3. 新豐麥當勞", time: "06:20", coords: [24.869053249466198, 120.99523784698553], direction: 'left' },
-          { name: "4. 竹北口<br>(新信遊覽車/田記烤鴨)", time: "06:30", coords: [24.838660208533096, 121.0054614256968], direction: 'right' },
-          { name: "5. 中正東路<br>(85度C/億客來)", time: "06:35", coords: [24.835160754234426, 121.01438506373573], direction: 'left' },
-          { name: "6. 水瀧路-H Motel", time: "06:42", coords: [24.834613397970802, 121.02267222325816], direction: 'bottom' },
-          { name: "7. 高山村茶行", time: "06:45", coords: [24.83077630667305, 121.03641054839333], direction: 'right' },
-          { name: "8. 新埔鎮公所", time: "06:55", coords: [24.825474017138664, 121.07403698093012], direction: 'top' },
-          { name: "9. 芎林文山路萊爾富", time: "07:10", coords: [24.77337040037082, 121.08484007722681], direction: 'right' },
-        ]
-      },
-      {
-        id: "route-2", 
-        name: "二、新竹六家線", 
-        color: "#dc2626", 
-        note: "06:30 發車",
-        stops: [
-          { name: "1. 新竹火車站", time: "06:30", coords: [24.8016, 120.9716], direction: 'left' },
-          { name: "2. 新竹高工全家", time: "06:32", coords: [24.8085, 120.9830], direction: 'left' },
-          { name: "3. 中華賓士(對向)", time: "06:35", coords: [24.8143, 120.9868], direction: 'top' },
-          { name: "4. 下斗崙公車站牌", time: "06:40", coords: [24.8190, 121.0020], direction: 'bottom' },
-          { name: "5. 福興公園", time: "06:45", coords: [24.8215, 121.0100], direction: 'top' },
-          { name: "6. 自強南路<br>(麥當勞/渣打銀行)", time: "06:52", coords: [24.8166, 121.0267], direction: 'right' },
-          { name: "7. 東海國小", time: "07:00", coords: [24.7955, 121.0505], direction: 'bottom' },
-          { name: "8. 上山村綠獅水車", time: "07:05", coords: [24.7865, 121.0750], direction: 'top' },
-          { name: "9. 芎林文林閣", time: "07:10", coords: [24.7751, 121.0805], direction: 'right' },
-        ]
-      },
-      {
-        id: "route-3", 
-        name: "三、新竹東區線", 
-        color: "#059669", 
-        note: "06:40 發車",
-        stops: [
-          { name: "1. 光復高中公車站牌", time: "06:40", coords: [24.7985, 120.9950], direction: 'bottom' },
-          { name: "2. 埔頂二路123號(惠宇青雲)", time: "06:45", coords: [24.7932, 121.0125], direction: 'top' },
-          { name: "3. 關埔國小", time: "06:50", coords: [24.7895, 121.0165], direction: 'bottom' },
-          { name: "4. 玉山銀行", time: "06:53", coords: [24.7877, 121.0191], direction: 'right' },
-          { name: "5. 關東橋渣打銀行對向", time: "06:55", coords: [24.7828, 121.0238], direction: 'bottom' },
-          { name: "6. 二重埔郵局", time: "07:05", coords: [24.7758, 121.0535], direction: 'bottom' },
-        ]
-      }
-    ];
+    // BUS_ROUTES 已經透過上面的 <script src="routes.js"> 載入進來了！
+
+    let currentRouteId = null;
 
     const map = L.map("map", { preferCanvas: true }).setView(CONFIG.school.coords, 12);
     
-    // CHANGED: 換成 OpenStreetMap 的標準圖層，上面有很多超商、店家、地標的標示，最接近 Google Maps 的生活感。
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap',
@@ -213,7 +214,15 @@
     const btnShowAll = document.getElementById("btnShowAll");
     const btnPicker = document.getElementById("btnPicker");
     const btnDownload = document.getElementById("btnDownload");
+    const btnToggleSidebar = document.getElementById("btnToggleSidebar");
     let pickerMode = false;
+
+    // 側邊欄收合邏輯
+    btnToggleSidebar.addEventListener("click", () => {
+      document.body.classList.toggle("sidebar-closed");
+      // 等待動畫結束後，重新計算地圖大小避免破圖
+      setTimeout(() => map.invalidateSize(), 300);
+    });
 
     BUS_ROUTES.forEach((route) => {
       const layerGroup = L.layerGroup().addTo(map);
@@ -227,7 +236,7 @@
           radius: 7, fillColor: route.color, color: "#ffffff", weight: 2.5, opacity: 1, fillOpacity: 1
         }).addTo(layerGroup).bindTooltip(stop.name, { 
             permanent: true, 
-            direction: stop.direction || 'right', // 根據設定檔決定標籤方向，避免重疊
+            direction: stop.direction || 'right',
             className: 'map-label',
             offset: [0, 0]
         });
@@ -277,6 +286,7 @@
     });
 
     function selectRoute(routeId) {
+      currentRouteId = routeId;
       btnShowAll.classList.remove("active");
       document.querySelectorAll(".route-card").forEach((card) => card.classList.toggle("selected", card.dataset.id === routeId));
       BUS_ROUTES.forEach((route) => {
@@ -291,6 +301,7 @@
     }
 
     btnShowAll.addEventListener("click", () => {
+      currentRouteId = null;
       btnShowAll.classList.add("active");
       document.querySelectorAll(".route-card").forEach((c) => c.classList.remove("selected"));
       const allBounds = L.latLngBounds([]);
@@ -325,12 +336,28 @@
         .openOn(map);
     });
 
+    // 高清廣角截圖邏輯
     btnDownload.addEventListener("click", () => {
       const originalText = btnDownload.innerText;
-      btnDownload.innerText = "⏳ 處理中...";
+      btnDownload.innerText = "⏳ 處理中(勿操作)...";
       
+      const mapEl = document.getElementById("mapContainer");
+      
+      // 1. 套用 2K 解析度大畫布樣式
+      mapEl.classList.add("export-mode");
+      map.invalidateSize(); // 告訴地圖容器變大了，請載入更多周圍的圖磚
+      
+      // 2. 重新對焦範圍，並增加留白 padding 讓周圍環境入鏡
+      let targetBounds = L.latLngBounds([]);
+      if (currentRouteId) {
+          targetBounds = routeLayers[currentRouteId].bounds;
+      } else {
+          BUS_ROUTES.forEach(r => targetBounds.extend(routeLayers[r.id].bounds));
+      }
+      map.fitBounds(targetBounds, { padding: [150, 150] });
+
+      // 3. 等待 1.5 秒讓邊緣的新圖磚完全載入
       setTimeout(() => {
-        const mapEl = document.getElementById("mapContainer");
         html2canvas(mapEl, {
           useCORS: true,
           allowTaint: false,
@@ -338,17 +365,25 @@
             return element.classList && element.classList.contains("leaflet-control-zoom");
           }
         }).then((canvas) => {
+          // 下載圖片
           const link = document.createElement("a");
-          link.download = "校車路線規劃地圖.png";
+          link.download = "校車路線規劃地圖_高清廣角.png";
           link.href = canvas.toDataURL("image/png");
           link.click();
+          
+          // 4. 復原原本的畫面狀態
+          mapEl.classList.remove("export-mode");
+          map.invalidateSize();
+          map.fitBounds(targetBounds, { padding: [40, 40] });
           btnDownload.innerText = originalText;
         }).catch(err => {
           console.error(err);
           alert("圖片產生失敗，請稍後再試。");
+          mapEl.classList.remove("export-mode");
+          map.invalidateSize();
           btnDownload.innerText = originalText;
         });
-      }, 300);
+      }, 1500); 
     });
 
     btnShowAll.click();
